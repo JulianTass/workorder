@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Work Orders</title>
+    <style>
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin: 20px;
+        }
+
+        .card-header {
+            padding: 20px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-title {
+            margin: 0;
+            font-size: 1.5rem;
+            color: #333;
+        }
+
+        .card-content {
+            padding: 20px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .search-box {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: white;
+            transition: background-color 0.2s;
+        }
+
+        .btn-refresh {
+            background-color: #3b82f6;
+        }
+
+        .btn-refresh:hover {
+            background-color: #2563eb;
+        }
+
+        .refresh-icon {
+            width: 16px;
+            height: 16px;
+            animation: none;
+        }
+
+        .refresh-icon.spinning {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            100% { transform: rotate(360deg); }
+        }
+
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        thead tr {
+            background-color: #f3f4f6;
+        }
+
+        th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 500;
+            color: #4b5563;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        tbody tr:hover {
+            background-color: #f9fafb;
+        }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: white;
+            display: inline-block;
+        }
+
+        .truncate {
+            max-width: 200px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .badge-high { background-color: #ef4444; }
+        .badge-medium { background-color: #f59e0b; }
+        .badge-low { background-color: #10b981; }
+
+        .badge-new { background-color: #3b82f6; }
+        .badge-in-progress { background-color: #8b5cf6; }
+        .badge-completed { background-color: #10b981; }
+        .badge-cancelled { background-color: #6b7280; }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+
+        .error {
+            color: #ef4444;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 20px;
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Work Orders</h2>
+        </div>
+        <div class="card-content">
+            <div class="controls">
+                <input 
+                    type="text" 
+                    id="searchInput" 
+                    class="search-box" 
+                    placeholder="Search by work order no, customer name, email..."
+                >
+                <button id="refreshButton" class="btn btn-refresh" onclick="fetchWorkOrders()">
+                    <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 3V9H15M3 15V21H9M21 9C21 13.97 16.97 18 12 18C7.03 18 3 13.97 3 9M21 15C21 10.03 16.97 6 12 6C7.03 6 3 10.03 3 15"></path>
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+            <div class="table-container">
+                <div id="loading" class="loading">Loading...</div>
+                <div id="error" class="error" style="display: none;"></div>
+                <div id="noResults" class="no-results" style="display: none;">No matching work orders found</div>
+                <table id="workOrderTable" style="display: none;">
+                    <thead>
+                        <tr>
+                            <th>Work Order No</th>
+                            <th>Customer ID</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Phone No</th>
+                            <th>Work Order Name</th>
+                            <th>Description</th>
+                            <th>Severity</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="workOrderTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let workOrdersData = [];
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initial fetch
+            fetchWorkOrders();
+
+            // Search input handler
+            const searchInput = document.getElementById('searchInput');
+            searchInput.addEventListener('input', handleSearch);
+
+            // Refresh button handler
+            const refreshButton = document.getElementById('refreshButton');
+            refreshButton.addEventListener('click', handleRefresh);
+        });
+
+        async function fetchWorkOrders() {
+            const loadingElement = document.getElementById('loading');
+            const errorElement = document.getElementById('error');
+            const tableElement = document.getElementById('workOrderTable');
+            const noResultsElement = document.getElementById('noResults');
+
+            try {
+
+                const response = await fetch('http://localhost:5500/api/work-orders', {
+                    method: 'GET',
+                    mode: 'cors',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },   
+                    
+                    
+                });
+                console.log("response" + response)
+           
+            
+                if (!response.ok) {
+                    throw new Error('Failed to fetch work orders');
+                }
+                workOrdersData = await response.json();
+                
+                loadingElement.style.display = 'none';
+                errorElement.style.display = 'none';
+                noResultsElement.style.display = 'none';
+                tableElement.style.display = 'table';
+                
+                renderWorkOrders(workOrdersData);
+            } catch (error) {
+                loadingElement.style.display = 'none';
+                errorElement.textContent = error.message;
+                errorElement.style.display = 'block';
+                tableElement.style.display = 'none';
+                noResultsElement.style.display = 'none';
+            }
+        }
+
+        function handleSearch(event) {
+            const searchTerm = event.target.value.toLowerCase();
+            const filteredOrders = workOrdersData.filter(order => 
+                order.workOrderNo.toLowerCase().includes(searchTerm) ||
+                order.customerName.toLowerCase().includes(searchTerm) ||
+                order.email.toLowerCase().includes(searchTerm) ||
+                order.workOrderName.toLowerCase().includes(searchTerm) ||
+                order.description?.toLowerCase().includes(searchTerm)
+            );
+
+            const tableElement = document.getElementById('workOrderTable');
+            const noResultsElement = document.getElementById('noResults');
+
+            if (filteredOrders.length === 0) {
+                tableElement.style.display = 'none';
+                noResultsElement.style.display = 'block';
+            } else {
+                tableElement.style.display = 'table';
+                noResultsElement.style.display = 'none';
+                renderWorkOrders(filteredOrders);
+            }
+        }
+
+        async function handleRefresh() {
+            const refreshButton = document.getElementById('refreshButton');
+            const refreshIcon = refreshButton.querySelector('.refresh-icon');
+            
+            // Add spinning animation
+            refreshIcon.classList.add('spinning');
+            refreshButton.disabled = true;
+
+            try {
+                await fetchWorkOrders();
+                // Reset search
+                document.getElementById('searchInput').value = '';
+            } finally {
+                // Remove spinning animation
+                setTimeout(() => {
+                    refreshIcon.classList.remove('spinning');
+                    refreshButton.disabled = false;
+                }, 500);
+            }
+        }
+
+        function getSeverityClass(severity) {
+            const classes = {
+                'High': 'badge-high',
+                'Medium': 'badge-medium',
+                'Low': 'badge-low'
+            };
+            return classes[severity] || 'badge-low';
+        }
+
+        function getStatusClass(status) {
+            const classes = {
+                'New': 'badge-new',
+                'In Progress': 'badge-in-progress',
+                'Completed': 'badge-completed',
+                'Cancelled': 'badge-cancelled'
+            };
+            return classes[status] || 'badge-new';
+        }
+
+        function renderWorkOrders(workOrders) {
+            const tableBody = document.getElementById('workOrderTableBody');
+            tableBody.innerHTML = '';
+
+            workOrders.forEach(order => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${order.workOrderNo}</td>
+                    <td>${order.customerId}</td>
+                    <td>${order.customerName}</td>
+                    <td>${order.email}</td>
+                    <td>${order.phoneNo}</td>
+                    <td>${order.workOrderName}</td>
+                    <td><div class="truncate">${order.description || ''}</div></td>
+                    <td><span class="badge ${getSeverityClass(order.severity)}">${order.severity}</span></td>
+                    <td><span class="badge ${getStatusClass(order.status)}">${order.status}</span></td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+    </script>
+</body>
+</html>
